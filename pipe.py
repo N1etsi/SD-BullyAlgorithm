@@ -1,8 +1,9 @@
-from multiprocessing import Process, Pipe
-from node import *
+from multiprocessing import Process, Pipe, Queue
+""" from node import * """
+from teste_recv import *
 
 if __name__ == '__main__':
-    n_nodes = 5
+    n_nodes = 2
 
     masterDict = {}
     nodeObj = []
@@ -31,8 +32,8 @@ if __name__ == '__main__':
     for node in nodesProcess:
         node.start()
 
-
-
+    for node in nodesProcess:
+        node.join()
 
 
 
