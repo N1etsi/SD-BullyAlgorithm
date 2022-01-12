@@ -35,7 +35,7 @@ class Node():
                 if conns[node].poll():
                    #print("Node " + str(self.id) + " has received: " + conns[node].recv())
                     msg=conns[node].recv()
-                    print("Thread - Node " + str(self.id) + " has received: " + msg)
+                    #print("Thread - Node " + str(self.id) + " has received: " + msg)
                     q.put(msg)
 
     
@@ -52,12 +52,12 @@ class Node():
 
         for node in self.conns:    
             self.conns[node].send(str(self.id) + " ARE-YOU-THERE")
-        i=0
-        while i<1:
+        
+        while 1:
             if not self.q.empty():
                 line=self.q.get()
                 line=line.split()
-                print(line)
+                #print(line)
                 print("TestNodes -Node " + str(self.id) + " from= "+line[0]+" msg= "+line[1])
-                i+=1
+                
 

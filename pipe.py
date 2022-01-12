@@ -3,7 +3,7 @@ from multiprocessing import Process, Pipe, Queue
 from teste_recv import *
 
 if __name__ == '__main__':
-    n_nodes = 2
+    n_nodes = 5
 
     masterDict = {}
     nodeObj = []
