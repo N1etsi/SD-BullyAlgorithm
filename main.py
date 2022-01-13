@@ -3,7 +3,7 @@ from multiprocessing import Process, Pipe, Queue
 from teste_socket import *
 
 if __name__ == '__main__':
-    n_nodes = 3
+    n_nodes = 6
 
 
     nodeObj = []

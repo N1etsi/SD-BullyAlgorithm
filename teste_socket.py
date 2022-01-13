@@ -30,25 +30,21 @@ class Node():
 
         while 1:
             conn, addr = self.s.accept()
-            Thread(target=self.msg_reader, args=(conn,addr,)).start()
+            Thread(target=self.msg_reader, args=(conn,)).start()
             
 
-    def msg_reader(self,conn,addr):
-        print('conn=',conn,' addr=',addr)
+    def msg_reader(self,conn):
         while True:
             msg = conn.recv(1024)
             if not msg:
                 break
-            print(msg.decode())
             self.q.put(msg.decode())
 
-        #conn.send(data)  # simple ping
         
     
 
         
     def testNodes(self):
-        #Send messages
         
         self.t = Thread(target=self.listener, args=())
         self.t.start()
@@ -64,6 +60,5 @@ class Node():
             if not self.q.empty():
                 line=self.q.get()
                 line=line.split()
-                #print(line)
                 print("TestNodes -Node " + str(self.id) + " from= "+line[0]+" msg= "+line[1])
                 
