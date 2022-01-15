@@ -2,6 +2,9 @@ from multiprocessing import Process, Queue
 from threading  import Thread
 import socket
 import time
+import keyboard
+
+from itsdangerous import exc
 
 
 class Master():
@@ -34,10 +37,25 @@ class Master():
         self.t = Thread(target=self.listener, args=())
         self.t.start()
 
+        
+
         while(1):
-            print("//////////////////////////////////////////\n")
+           # print("//////////////////////////////////////////\n")
             for node in self.leaders:
-                print("id: " + node + " |  state: " + self.states[node] + " |  leaders: " + self.leaders[node])           
+                print("id: " + node + " |  state: " + self.states[node] + " |  leaders: " + self.leaders[node])    
+                
+            
+
+            ch = keyboard.read_key()
+            print(ch)
+            try:
+                if int(ch) >= 0 and int(ch) < 10:
+                    id = int(ch)
+                    self.msg_send(0, self.KILL)
+                    print("sent kill to " + str(id))
+            except:
+                pass
+
 
             time.sleep(1)
 
@@ -62,6 +80,8 @@ class Master():
     def msg_send(self, id, msg):
         st = 0
         en = self.n_nodes
+
+        msg = "99 " + str(msg)
 
         if id != -1:   
             st = id

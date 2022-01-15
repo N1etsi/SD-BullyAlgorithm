@@ -4,7 +4,7 @@ from Node import *
 from Master import *
 
 if __name__ == '__main__':
-    n_nodes = 6
+    n_nodes = 4
 
 
     nodeObj = []
