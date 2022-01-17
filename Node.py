@@ -31,7 +31,7 @@ class Node():
         self.state = self.NORMAL
         self.leader = 0
         self.tempLeader = 98
-        self.T = 1
+        self.T = 0.4
         self.last_leader_update = time()
         self.timeout = 2 * self.T
         self.wakeTime = 0
@@ -66,6 +66,7 @@ class Node():
         check_leader_time = 0
         check_peer_time = 0
         check_halt_time = 0
+        im_back = False
         
 
 
@@ -97,6 +98,7 @@ class Node():
                         self.last_leader_update = 0
                         self.wakeTime = time()
                         new_message = False
+                        im_back = True
 
                     elif msg == self.WAKE:
                         self.state = self.ELECTION
@@ -135,16 +137,19 @@ class Node():
                         check_leader = 0
                         self.last_leader_update = time()
 
-                    elif check_leader == 1 and self.leader < 0:
-                        if time()-self.wakeTime < self.timeout:
+                    elif im_back:
+                        if time()-self.wakeTime < self.timeout/2:
                             self.tempLeader = min(self.tempLeader, from_id)
                         else:
                             self.leader = self.tempLeader
-                            check_leader == 1
+                            im_back = False
+                            check_leader = 0
+
+                            
 
                     
 
-                    if check_leader == 2 and from_id < self.id and self.leader >= 0:
+                    if check_leader == 2 and from_id < self.id and not im_back:
                         check_leader = 0
 
             #TAKE ACTION
