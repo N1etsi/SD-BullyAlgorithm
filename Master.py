@@ -1,11 +1,12 @@
 from multiprocessing import Process, Queue
-from threading  import Thread
+from threading  import Thread, Lock
 import socket
 import time
 import keyboard
 
 from itsdangerous import exc
 
+data_lock = Lock()
 
 class Master():
     #States
@@ -21,12 +22,14 @@ class Master():
 
     KILL = -1
 
+
+
     def __init__(self, n_nodes, id=99):
         self.id = id
         self.n_nodes = n_nodes
         self.leaders = {}
         self.states = {}
-        
+                
 
         """ --------------------------- """
         self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -51,7 +54,7 @@ class Master():
             try:
                 if int(ch) >= 0 and int(ch) < 10:
                     id = int(ch)
-                    self.msg_send(0, self.KILL)
+                    self.msg_send(id, self.KILL)
                     print("sent kill to " + str(id))
             except:
                 pass
@@ -73,9 +76,9 @@ class Master():
             if not msg:
                 break
             msg = msg.split()
-
-            self.states[msg[0]] = msg[1]
-            self.leaders[msg[0]] = msg[2]
+            with data_lock:
+                self.states[msg[0]] = msg[1]
+                self.leaders[msg[0]] = msg[2]
             
     def msg_send(self, id, msg):
         st = 0

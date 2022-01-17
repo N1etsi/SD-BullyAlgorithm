@@ -1,8 +1,10 @@
 from multiprocessing import Process, Queue
 from pickle import FALSE
-from threading  import Thread
+from threading  import Thread, Lock
 import socket
 from time import *
+
+data_lock = Lock()
 
 
 class Node():
@@ -23,13 +25,16 @@ class Node():
 
     
     def __init__(self, id, n_nodes) -> None:
+        print("initing " + str(id))
         self.id = id
         self.n_nodes = n_nodes
         self.state = self.NORMAL
         self.leader = 0
+        self.tempLeader = 98
         self.T = 1
         self.last_leader_update = time()
         self.timeout = 2 * self.T
+        self.wakeTime = 0
 
         """ --------------------------- """
         self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -49,7 +54,8 @@ class Node():
             msg = conn.recv(1024)
             if not msg:
                 break
-            self.q.put(msg.decode())
+            with data_lock:
+                self.q.put(msg.decode())
 
 
     def run(self):
@@ -60,10 +66,13 @@ class Node():
         check_leader_time = 0
         check_peer_time = 0
         check_halt_time = 0
+        
 
 
         while 1:
+            sleep(0.2)
             new_message = False
+            self.updateMaster()
             if not self.q.empty():
                 new_message = True
                 line = self.q.get()
@@ -73,10 +82,25 @@ class Node():
                 msg =  int(line[1])
 
                 if from_id == 99:
-                    if msg == self.KILL:
+                    if msg == self.KILL and self.state != self.DOWN:
                         self.state = self.DOWN
+                        print(str(self.id) + " is ded\n")
+                        new_message = False
+                    elif msg == self.KILL and self.state == self.DOWN:
+                        print(str(self.id) + " back alive\n")
+                        self.state = self.NORMAL
+                        self.leader = -1
+                        check_leader = 1
+                        check_leader_time = 0
+                        check_peer_time = 0
+                        check_halt_time = 0
+                        self.last_leader_update = 0
+                        self.wakeTime = time()
+                        new_message = False
+
                     elif msg == self.WAKE:
                         self.state = self.ELECTION
+                        new_message = False
 
 
             if self.state == self.DOWN:
@@ -101,6 +125,8 @@ class Node():
                 elif msg == self.NEW_LEADER:
                     self.leader = from_id
                     self.state = self.NORMAL
+                    check_leader = 0
+
                     self.last_leader_update = time()
 
                 elif msg == self.YES:
@@ -109,7 +135,16 @@ class Node():
                         check_leader = 0
                         self.last_leader_update = time()
 
-                    if check_leader == 2 and from_id < self.id:
+                    elif check_leader == 1 and self.leader < 0:
+                        if time()-self.wakeTime < self.timeout:
+                            self.tempLeader = min(self.tempLeader, from_id)
+                        else:
+                            self.leader = self.tempLeader
+                            check_leader == 1
+
+                    
+
+                    if check_leader == 2 and from_id < self.id and self.leader >= 0:
                         check_leader = 0
 
             #TAKE ACTION
@@ -118,7 +153,6 @@ class Node():
             if self.state == self.NORMAL and self.leader != self.id:
                 if time()-self.last_leader_update > self.timeout and check_leader == 0: #Start election proccess
                     #SEND ARE U THERE to LEADER
-                    #print(str(self.id) + " SENT CHECK LEADER to " + str(self.leader))
                     self.msg_send(self.leader, self.ARE_U_THERE)
                     check_leader = 1
                     check_leader_time = time()
@@ -147,31 +181,14 @@ class Node():
                         self.msg_send(n, self.NEW_LEADER)
                     
                     self.leader = self.id
-                    self.state = self.NORMAL
-
-
-
-
-
-
-
-
-
-
-
-
-            self.updateMaster()
-            
-
-
-
-        
+                    self.state = self.NORMAL   
 
 
 
     
 
     def msg_send(self, to_id, msg):
+        #print("FROM: " + str(self.id) + " TO: " + str(to_id) + " START Message: " + str(msg) +"\n")
         st = 0
         en = self.n_nodes
 
@@ -186,12 +203,14 @@ class Node():
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 while 1:
                     try:
-                        s.connect(('localhost', 123*100+node))
+                        s.connect(('localhost', 123*100+node))      
                         break
                     except:
                         pass
                 s.send(msg.encode('utf-8'))
                 s.close()
+        
+        #print("FROM: " + str(self.id) + " TO: " + str(to_id) + " FINISH\n")
     
 
     def updateMaster(self):
@@ -200,21 +219,3 @@ class Node():
         self.msg_send(99, msg)
 
         
-    def testNodes(self):
-        
-        self.t = Thread(target=self.listener, args=())
-        self.t.start()
-
-        for node in range(self.n_nodes):
-            if node != self.id:    
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.connect(('localhost', 123*100+node))
-                s.send((str(self.id)+' ARE-YOU-THERE').encode('utf-8'))
-                s.close()
-
-        while 1:
-            if not self.q.empty():
-                line=self.q.get()
-                line=line.split()
-                print("TestNodes -Node " + str(self.id) + " from= "+line[0]+" msg= "+line[1])
-                
