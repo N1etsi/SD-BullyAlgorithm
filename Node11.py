@@ -27,6 +27,7 @@ class Node():
     #Management Messages
     KILL = -1
     WAKE = -2
+    TERMINATE = -10
 
     
     def __init__(self, id, n_nodes, msg_dl, flr_rate, debug) -> None:
@@ -35,11 +36,9 @@ class Node():
         self.n_nodes = n_nodes
         self.state = self.NORMAL
         self.leader = -1
-        self.tempLeader = 98
-        self.T = 1
+        self.T = 0.5
         self.last_leader_update = time()
         self.timeout = 2 * self.T
-        self.wakeTime = 0
         self.message_delay = msg_dl #TODO
         self.message_failure_rate = flr_rate
 
@@ -102,30 +101,31 @@ class Node():
         check_leader_time = 0
         check_peer_time = 0
         check_halt_time = 0
+        check_new_leader = 0
         im_back = False
         
 
-
-        while 1:
-            sleep(0.1)
+        try:
+          while 1:
+            
             match self.debug:
                 case "INITIAL":
                     if self.leader == 0:
                         self.measured_time = time() - self.measured_time
                         self.updateMasterFinish()
-                        break
+                        return
 
                 case "LEADER_FAILURE":
                     if self.leader == 1:
                         self.measured_time = time() - self.measured_time
                         self.updateMasterFinish()
-                        break
+                        return
 
                 case "REVIVAL":
                     if self.leader == 0:
                         self.measured_time = time() - self.measured_time
                         self.updateMasterFinish()
-                        break
+                        return
 
                 case _:
                     self.updateMaster()
@@ -135,14 +135,14 @@ class Node():
             new_message = False 
             if not self.q.empty():
                 new_message = True
-                self.n_messages_received += 1
+                
                 line = self.q.get()
                 line=line.split()
 
                 from_id = int(line[0])
                 msg =  int(line[1])
 
-                if from_id == 99:
+                if from_id == 999:
                     if msg == self.KILL and self.state != self.DOWN:
                         self.state = self.DOWN
                         print(str(self.id) + " is ded\n")
@@ -156,13 +156,17 @@ class Node():
                         check_peer_time = 0
                         check_halt_time = 0
                         self.last_leader_update = 0
-                        self.wakeTime = time()
                         new_message = False
                         im_back = True
 
                     elif msg == self.WAKE:
                         self.state = self.ELECTION
                         new_message = False
+
+                    elif msg == self.TERMINATE:
+                        return
+                else:
+                    self.n_messages_received += 1
 
 
             if self.state == self.DOWN:
@@ -174,105 +178,102 @@ class Node():
                     self.last_leader_update = time()
 
                 if msg == self.ARE_U_THERE:
-                    #print(str(self.id) + " RX ARE-U-THERE from " + str(from_id))
                     self.msg_send(from_id, self.YES)
-                    check_leader_time = 0
-                    check_leader = 1
-                    self.state = self.NORMAL
-                    
 
-                   
+                
+                    check_leader = 1
+                    check_leader_time = 0
+                    self.state = self.NORMAL
+                                       
+                elif msg == self.YES:
+                    check_leader = 0
+                    self.state = self.NORMAL
+
+                    self.last_leader_update = time()
 
                 elif msg == self.HALT:
                     self.state = self.ELECTION
-                    check_leader = 0
+                    check_leader = 10
+                    check_new_leader = time()
+                   
 
                 elif msg == self.NEW_LEADER:
                     self.leader = from_id
                     self.state = self.NORMAL
                     check_leader = 0
-                    self.n_elections += 1
-
                     self.last_leader_update = time()
+
+                    self.n_elections += 1
+                    
                 
                 elif msg == self.ECHO:
-                   self.msg_send(from_id, self.REPLY)
+                    self.msg_send(from_id, self.REPLY)
+               
                    
 
-                elif msg == self.REPLY and from_id == self.leader and check_leader==1:
+                elif msg == self.REPLY and from_id == self.leader:
                     self.last_leader_update = time()
                     check_leader = 0
-
-
-                elif msg == self.YES and self.leader != -1:
-                        check_leader = 0
-                        self.last_leader_update = time()
                 
-                elif msg == self.YES:
-                    pass
-
-
-
-            
+       
 
             #TAKE ACTION
 
             #Running for election
             if self.state == self.NORMAL:
-                if time()-self.last_leader_update > self.timeout-1 and check_leader == 0 and self.leader != -1 and self.leader != self.id: #Start election proccess
-                    #SEND ARE U THERE to LEADER
-                    self.msg_send(self.leader, self.ECHO)
+                # check time out last connection from leader
+                if time()-self.last_leader_update > self.timeout and check_leader == 0 and self.leader != self.id:
+                    if self.leader != -1:
+                        self.msg_send(self.leader, self.ECHO)
+                        check_leader_time = time()
+                    else:
+                        check_leader_time = 0
+                        sleep(self.id/10)
+                    
                     check_leader = 1
-                    check_leader_time = time()
+                    
 
-                elif self.leader == -1 and check_leader == 0:
+                #leader failure
+                elif time() - check_leader_time > self.timeout and check_leader == 1:
                     for n in range(self.id):
                         self.msg_send(n, self.ARE_U_THERE)
 
-                    print("Im starting an electionA " + str(self.id))
+                    self.state = self.ELECTION
                     check_leader = 2
                     check_peer_time = time()
+              
 
-
-                elif time()-check_leader_time > self.timeout and check_leader == 1:
-                    for n in range(self.id):
-                        self.msg_send(n, self.ARE_U_THERE)
-
-                    print("Im starting an electionB " + str(self.id))
-                    check_leader = 2
-                    check_peer_time = time()
-                    check_leader_time = time()
-
-                elif time()-check_peer_time > self.timeout and check_leader == 2:
+            #Asserting as leader if no other node answered
+            elif self.state == self.ELECTION:
+                #proceed if the superior node
+                if time() - check_peer_time > self.timeout and check_leader == 2:
                     for n in range(self.id+1, self.n_nodes):
                         self.msg_send(n, self.HALT)
 
-                    print("Sending HALT " + str(self.id))
-                    self.state = self.ELECTION
                     check_leader = 3
                     check_halt_time = time()
-                    check_peer_time = time()
 
-
-            #Asserting as leader
-            elif self.state == self.ELECTION:
-
-                if time()-check_halt_time > self.T and check_leader == 3:
-                    for n in range(self.id, self.n_nodes):
+                elif time() - check_halt_time > self.T and check_leader == 3:
+                    for n in range(self.id+1, self.n_nodes):
                         self.msg_send(n, self.NEW_LEADER)
                     
-                    print("Sending NEW LEADER " + str(self.id))
-                    
+                    self.leader = self.id
+                    self.state = self.NORMAL
+
+                    check_leader = 0
 
                     self.n_elections += 1
-                    self.leader = self.id
-                    self.state = self.NORMAL   
 
-
-
-    
+                elif time() - check_new_leader > self.timeout and check_leader == 10:
+                    check_leader = 0
+                    self.state = self.NORMAL
+                    self.last_leader_update = time()
+           
+        except:
+            print("Im ded booiiiiiiiiiiiiiiiiiiiiiiii", self.id, check_leader, self.state)
 
     def msg_send(self, to_id, msg):
+        #if to_id == 99:
         print("FROM: " + str(self.id) + " TO: " + str(to_id) + " START Message: " + str(msg) +"\n")
         st = 0
         en = self.n_nodes
@@ -298,7 +299,8 @@ class Node():
                     except:
                         pass
                 s.send(msg.encode('utf-8'))
-                self.n_messages_sent += 1
+                if node < 999: 
+                    self.n_messages_sent += 1
                 s.close()
         
         #print("FROM: " + str(self.id) + " TO: " + str(to_id) + " FINISH\n")
@@ -307,12 +309,12 @@ class Node():
     def updateMaster(self):
         msg = str(self.state) + " " + str(self.leader) 
 
-        self.msg_send(99, msg)
+        self.msg_send(999, msg)
 
         
     def updateMasterFinish(self):
         msg = str(self.state) + " " + str(self.leader) + " " + str(self.n_messages_sent) + " " + str(self.n_messages_received)  + " " + str(self.n_elections)  + " " + str(self.measured_time)
         #print(self.id, msg)
-        self.msg_send(99, msg)
+        self.msg_send(999, msg)
 
         

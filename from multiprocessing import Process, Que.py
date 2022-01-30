@@ -3,7 +3,6 @@ from pickle import FALSE
 from threading  import Thread, Lock
 import socket
 from time import *
-from random import random
 
 data_lock = Lock()
 
@@ -29,53 +28,23 @@ class Node():
     WAKE = -2
 
     
-    def __init__(self, id, n_nodes, msg_dl, flr_rate, debug) -> None:
+    def __init__(self, id, n_nodes) -> None:
         print("initing " + str(id))
         self.id = id
         self.n_nodes = n_nodes
         self.state = self.NORMAL
-        self.leader = -1
+        self.leader = 0
         self.tempLeader = 98
-        self.T = 1
+        self.T = 0.4
         self.last_leader_update = time()
         self.timeout = 2 * self.T
         self.wakeTime = 0
-        self.message_delay = msg_dl #TODO
-        self.message_failure_rate = flr_rate
 
         """ --------------------------- """
         self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.s.bind(('localhost', 123*100+self.id))
         self.s.listen()
         self.q=Queue()
-
-        #stats
-        self.debug = debug
-        self.n_messages_sent = 0
-        self.n_messages_received = 0
-        self.measured_time = time()
-
-        self.n_elections = 0
-
-        match debug:
-            case "INITIAL":
-                pass
-
-            case "LEADER_FAILURE":
-                self.leader = 0
-                if self.id == 0:
-                    self.state = self.DOWN
-                
-
-            case "REVIVAL":
-                self.leader = 1
-                if self.id == 0:
-                    self.leader = -1
-
-            case _:
-                pass
-
-
 
     def listener(self):
 
@@ -93,7 +62,6 @@ class Node():
                 self.q.put(msg.decode())
 
 
-
     def run(self):
         self.t = Thread(target=self.listener, args=())
         self.t.start()
@@ -107,35 +75,11 @@ class Node():
 
 
         while 1:
-            sleep(0.1)
-            match self.debug:
-                case "INITIAL":
-                    if self.leader == 0:
-                        self.measured_time = time() - self.measured_time
-                        self.updateMasterFinish()
-                        break
-
-                case "LEADER_FAILURE":
-                    if self.leader == 1:
-                        self.measured_time = time() - self.measured_time
-                        self.updateMasterFinish()
-                        break
-
-                case "REVIVAL":
-                    if self.leader == 0:
-                        self.measured_time = time() - self.measured_time
-                        self.updateMasterFinish()
-                        break
-
-                case _:
-                    self.updateMaster()
-
-
-
-            new_message = False 
+            sleep(0.2)
+            new_message = False
+            self.updateMaster()
             if not self.q.empty():
                 new_message = True
-                self.n_messages_received += 1
                 line = self.q.get()
                 line=line.split()
 
@@ -178,8 +122,6 @@ class Node():
                     self.msg_send(from_id, self.YES)
                     check_leader_time = 0
                     check_leader = 1
-                    self.state = self.NORMAL
-                    
 
                    
 
@@ -191,13 +133,11 @@ class Node():
                     self.leader = from_id
                     self.state = self.NORMAL
                     check_leader = 0
-                    self.n_elections += 1
 
                     self.last_leader_update = time()
                 
                 elif msg == self.ECHO:
                    self.msg_send(from_id, self.REPLY)
-                   
 
                 elif msg == self.REPLY and from_id == self.leader and check_leader==1:
                     self.last_leader_update = time()
@@ -206,12 +146,6 @@ class Node():
 
                 elif msg == self.YES and self.leader != -1:
                         check_leader = 0
-                        self.last_leader_update = time()
-                
-                elif msg == self.YES:
-                    pass
-
-
 
             
 
@@ -219,7 +153,7 @@ class Node():
 
             #Running for election
             if self.state == self.NORMAL:
-                if time()-self.last_leader_update > self.timeout-1 and check_leader == 0 and self.leader != -1 and self.leader != self.id: #Start election proccess
+                if time()-self.last_leader_update > self.timeout and check_leader == 0 and self.leader != -1 and self.leader != self.id: #Start election proccess
                     #SEND ARE U THERE to LEADER
                     self.msg_send(self.leader, self.ECHO)
                     check_leader = 1
@@ -229,7 +163,7 @@ class Node():
                     for n in range(self.id):
                         self.msg_send(n, self.ARE_U_THERE)
 
-                    print("Im starting an electionA " + str(self.id))
+                    print("Im starting an electyion " + str(self.id))
                     check_leader = 2
                     check_peer_time = time()
 
@@ -238,33 +172,25 @@ class Node():
                     for n in range(self.id):
                         self.msg_send(n, self.ARE_U_THERE)
 
-                    print("Im starting an electionB " + str(self.id))
+                    print("Im starting an electyion " + str(self.id))
                     check_leader = 2
                     check_peer_time = time()
-                    check_leader_time = time()
 
                 elif time()-check_peer_time > self.timeout and check_leader == 2:
-                    for n in range(self.id+1, self.n_nodes):
+                    for n in range(self.id, self.n_nodes):
                         self.msg_send(n, self.HALT)
 
-                    print("Sending HALT " + str(self.id))
                     self.state = self.ELECTION
                     check_leader = 3
                     check_halt_time = time()
-                    check_peer_time = time()
 
 
             #Asserting as leader
             elif self.state == self.ELECTION:
-
                 if time()-check_halt_time > self.T and check_leader == 3:
                     for n in range(self.id, self.n_nodes):
                         self.msg_send(n, self.NEW_LEADER)
                     
-                    print("Sending NEW LEADER " + str(self.id))
-                    
-
-                    self.n_elections += 1
                     self.leader = self.id
                     self.state = self.NORMAL   
 
@@ -273,7 +199,7 @@ class Node():
     
 
     def msg_send(self, to_id, msg):
-        print("FROM: " + str(self.id) + " TO: " + str(to_id) + " START Message: " + str(msg) +"\n")
+        #print("FROM: " + str(self.id) + " TO: " + str(to_id) + " START Message: " + str(msg) +"\n")
         st = 0
         en = self.n_nodes
 
@@ -283,12 +209,7 @@ class Node():
 
         msg = str(self.id) + " " + str(msg)
 
-        sleep(random()*self.message_delay)
-
-
         for node in range(st, en):
-            if random() < self.message_failure_rate/100:
-                continue
             if node != self.id:    
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 while 1:
@@ -298,21 +219,14 @@ class Node():
                     except:
                         pass
                 s.send(msg.encode('utf-8'))
-                self.n_messages_sent += 1
                 s.close()
         
         #print("FROM: " + str(self.id) + " TO: " + str(to_id) + " FINISH\n")
     
 
     def updateMaster(self):
-        msg = str(self.state) + " " + str(self.leader) 
+        msg = str(self.state) + " " + str(self.leader)
 
-        self.msg_send(99, msg)
-
-        
-    def updateMasterFinish(self):
-        msg = str(self.state) + " " + str(self.leader) + " " + str(self.n_messages_sent) + " " + str(self.n_messages_received)  + " " + str(self.n_elections)  + " " + str(self.measured_time)
-        #print(self.id, msg)
         self.msg_send(99, msg)
 
         

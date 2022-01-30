@@ -1,8 +1,11 @@
 from multiprocessing import Process, Queue
+from pickle import FALSE
 from threading  import Thread, Lock
 import socket
 import time
 import keyboard
+import os
+import msvcrt
 
 from itsdangerous import exc
 
@@ -21,14 +24,22 @@ class Master():
     NEW_LEADER = 104
 
     KILL = -1
+    RND_ST = -3
+    TERMINATE = -10
 
 
 
-    def __init__(self, n_nodes, id=99):
+    def __init__(self, n_nodes, id=999, debug = ""):
         self.id = id
         self.n_nodes = n_nodes
         self.leaders = {}
         self.states = {}
+        self.msg_tx = 0
+        self.msg_rx = 0
+        self.n_elec = {}
+        self.time_meas = 0
+        self.debug = debug
+        self.rnd = False
                 
 
         """ --------------------------- """
@@ -44,24 +55,50 @@ class Master():
 
         while(1):
            # print("//////////////////////////////////////////\n")
-            for node in self.leaders:
-                print("id: " + node + " |  state: " + self.states[node] + " |  leaders: " + self.leaders[node])    
+            if self.debug == "":
+                clearConsole()
+                for node in self.leaders:
+                    match int(self.states[node]):
+                        case self.DOWN:
+                            st = "DOWN    "
+                        case self.NORMAL:
+                            st = "NORMAL  "
+                        case self.ELECTION:
+                            st = "ELECTION"
+                        case _:
+                            st = "UNKNOWN"
+
+                    print("id: " + node + " |  state: " + st + " |  leader: " + self.leaders[node])   
                 
-            
+                if msvcrt.kbhit():
+                    ch = msvcrt.getch()
+                    print(ch)
+                    if ch == b'r':
+                        self.msg_send(-1, self.RND_ST)
+                        
+                        sta = "ON"
+                        if self.rnd:
+                            sta = "OFF"
 
-            ch = keyboard.read_key()
-            print(ch)
-            try:
-                if int(ch) >= 0 and int(ch) < 10:
-                    id = int(ch)
-                    self.msg_send(id, self.KILL)
-                    print("sent kill to " + str(id))
-            except:
-                pass
+                        print("RANDOM STATE is", sta)
+                        self.rnd = not self.rnd
+                        
+                    else:
+                        try:
+                            nnn = int(ch)
+                            self.msg_send(nnn, self.KILL)
+                        except:
+                            print("wrong usage, only numbers from 0-9 and 'r' for changing random state")
 
 
-            time.sleep(1)
+                    
+    
 
+                time.sleep(2)
+            elif len(self.leaders) == self.n_nodes-1:
+                self.msg_send(-1, self.TERMINATE)
+                print("MSG_RX:", self.msg_rx/self.n_nodes, "\nMSG_TX:", self.msg_tx/self.n_nodes, "\nMSG_TIM:", self.time_meas/self.n_nodes)
+                break
 
     def listener(self):
 
@@ -79,12 +116,20 @@ class Master():
             with data_lock:
                 self.states[msg[0]] = msg[1]
                 self.leaders[msg[0]] = msg[2]
+
+                if self.debug != "":
+                    self.n_elec[msg[0]] = msg[5]
+
+                    self.msg_tx += int(msg[3])
+                    self.msg_rx += int(msg[4])
+                    self.time_meas += float(msg[6])
+                
             
     def msg_send(self, id, msg):
         st = 0
         en = self.n_nodes
 
-        msg = "99 " + str(msg)
+        msg = str(self.id) + " " + str(msg)
 
         if id != -1:   
             st = id
@@ -98,3 +143,8 @@ class Master():
                 s.close()
     
    
+def clearConsole():
+    command = 'clear'
+    if os.name in ('nt', 'dos'):  # If Machine is running on Windows, use cls
+        command = 'cls'
+    os.system(command)
