@@ -62,23 +62,24 @@ class Master():
                         case self.DOWN:
                             st = "DOWN    "
                         case self.NORMAL:
-                            st = "NORMAL  "
+                            st = "NORMAL  " + " |  leader: " + self.leaders[node]
                         case self.ELECTION:
-                            st = "ELECTION"
+                            st = "ELECTION" + " |  leader: " + self.leaders[node]
                         case _:
                             st = "UNKNOWN"
 
-                    print("id: " + node + " |  state: " + st + " |  leader: " + self.leaders[node])   
+                    print("id: " + node + " |  state: " + st)   
                 
                 if msvcrt.kbhit():
                     ch = msvcrt.getch()
-                    print(ch)
+           
                     if ch == b'r':
                         self.msg_send(-1, self.RND_ST)
                         
                         sta = "ON"
                         if self.rnd:
                             sta = "OFF"
+                        
 
                         print("RANDOM STATE is", sta)
                         self.rnd = not self.rnd
